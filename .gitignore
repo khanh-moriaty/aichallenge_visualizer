@@ -1,0 +1,4 @@
+tracker.py
+output/
+output/*.*
+videos/*.mp4
