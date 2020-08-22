@@ -120,7 +120,7 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
         if len(line_content) > 4:  # If testing data
             x = int(line_content[4])
             y = int(line_content[5])
-
+        
         video_info[video_name][5][frame_id][moi_id].append((class_id, (x, y)))
 
     for video_name in video_info:
@@ -141,23 +141,6 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
         print('fps:', vid_fps)
         width, height = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
             vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        # img_mask = np.zeros(shape=(height, width, 4), dtype=np.uint8)
-        # cv2.fillPoly(img_mask, [video[0]], ROI_COLOR)
-        # cv2.polylines(img, [video[0]], isClosed=True, color=ROI_COLOR_BGR, thickness=2)
-
-        # for moi_id, moi in enumerate(video[1]):
-        #     if moi_id == 0:
-        #         continue
-        #     cv2.polylines(img_mask, [moi[:-1]], isClosed=False,
-        #                   color=getColorMOI_BGRA(moi_id), thickness=3)
-        #     cv2.arrowedLine(img_mask, tuple(
-        #         moi[-2]), tuple(moi[-1]), color=getColorMOI_BGRA(moi_id), thickness=3)
-
-        # img_mask = cv2.cvtColor(img_mask, cv2.COLOR_RGBA2BGRA)
-
-        # Normalize alpha channel to [0; 1]
-        # alpha_channel = img_mask[:, :, 3].astype(float) / 255.0
-        # alpha_channel = np.repeat(alpha_channel[:, :, np.newaxis], 3, axis=2)
 
         curr_count = np.zeros(shape=(moi_count, 5), dtype=int)
 
@@ -171,8 +154,6 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
             for j in range(FRAME_PER_SEGMENT):
                 _, frame = vid.read()
                 img[j] = frame
-            # img = img * (1-alpha_channel) + img_mask[:, :, :3] * alpha_channel
-            # img = img.astype(np.uint8)
 
             for j in range(FRAME_PER_SEGMENT):
                 cv2.polylines(img[j], [video[0]], isClosed=True, color=ROI_COLOR_BGR, thickness=4)
@@ -181,9 +162,12 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
                     if moi_id == 0:
                         continue
                     cv2.polylines(img[j], [moi[:-1]], isClosed=False,
-                                color=getColorMOI_BGR(moi_id), thickness=3)
-                    cv2.arrowedLine(img[j], tuple(
-                        moi[-2]), tuple(moi[-1]), color=getColorMOI_BGR(moi_id), thickness=3)
+                                color=getColorMOI_BGR(moi_id), thickness=2)
+                    cv2.arrowedLine(img[j], tuple(moi[-2]), tuple(moi[-1]), 
+                                    color=getColorMOI_BGR(moi_id), thickness=2, tipLength=0.01)
+                    
+                    
+                cv2.rectangle(img[j], (1125 - 150*((moi_count-2)//6), 0), (1280, 200), color=(222, 222, 222), thickness=-1)
                     
                 for moi_id in range(1, moi_count):
                     obj_list = video[5][i*FRAME_PER_SEGMENT + j][moi_id]
@@ -194,14 +178,14 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
 
                     count_str = ' '.join([str(x) for x in curr_count[moi_id][1:]])
                     moi = video[1][moi_id]
-                    cv2.putText(img[j], count_str, (moi[-1][0] + 50, moi[-1][1]), cv2.FONT_HERSHEY_SIMPLEX,
-                                fontScale=0.8, color=getColorMOI_BGR(moi_id), thickness=2)
+                    cv2.putText(img[j], count_str, (1150 - 150 * ((moi_id-1)//6), 35 + ((moi_id-1)%6) * 25), cv2.FONT_HERSHEY_SIMPLEX,
+                                fontScale=0.6, color=getColorMOI_BGR(moi_id), thickness=2)
 
                 # Remove frames older than 0.25s
                 flash_list = [flash for flash in flash_list if (
                     i*FRAME_PER_SEGMENT+j-flash[0] < (vid_fps * 0.25))]
                 for flash in flash_list:
-                    radius = (15 * flash[1][1][1] // height)
+                    radius = (20 * flash[1][1][1] // height)
                     cv2.circle(img[j], flash[1][1], radius=radius,
                                color=(0, 0, 255), thickness=-1)
                     cv2.putText(img[j], str(flash[1][0]), (flash[1][1][0]-radius, flash[1][1][1]-radius),
@@ -212,52 +196,10 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
 
             [video[2].write(frame) for frame in img]
 
-        # img = video[4][0]
-        # video[4][:][:,:,:] = video[4][:][:,:,:] * (1-alpha) + moi_mask[:,:,:3] * alpha
-        # video[4] = video[4].astype(np.uint8)
-
-        # for i in range(frame_count):
-            # img = video[4][i]
-            # height, width = img.shape[:2]
-
-            # alpha = color_fill[3] / 255.0
-            # img = img.astype(float)
-            # img[:,:,:] = img[:,:,:] * (1-alpha) + moi_mask[:,:,:3] * alpha
-            # img = img.astype(np.uint8)
-
-            # for j in range(moi_count):
-            #     for obj in video_info[video_name][5][i][j]:
-            #         track_list.append((i+1,j,obj))
-
         print(time.time() - t)
         t = time.time()
-        # for i in range(frame_count):
-        #     video[2].write(video[4][i])
-
         video[2].release()
 
-        # frame_stack = frame_count // 1
-        # CPU_PROCESS = findOptimalProcess(frame_stack)
-        # print('CPU_PROCESS', CPU_PROCESS)
-        # print(time.time() - t)
-        # t = time.time()
-        # pool = Pool(CPU_PROCESS)
-        # segments = video[4][:frame_stack]
-        # segments = np.split(segments, CPU_PROCESS)
-        # img = pool.map(calc_median, segments)
-
-        # # img = video[4][::findOptimalProcess(frame_count)]
-        # img = np.median(img, axis=0)
-        # frame = video[4][100]
-        # sub = np.clip(frame.astype(int) - img.astype(int), 0, 255).astype(np.uint8)
-        # out_img_path = os.path.join(output_dir, 'test.jpg')
-        # out_frame_path = os.path.join(output_dir, 'frame.jpg')
-        # out_sub_path = os.path.join(output_dir, 'sub.jpg')
-        # cv2.imwrite(out_img_path, img)
-        # cv2.imwrite(out_frame_path, frame)
-        # cv2.imwrite(out_sub_path, img-frame)
-
-    print(time.time() - t)
 
 
 if __name__ == "__main__":
