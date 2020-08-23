@@ -5,7 +5,6 @@ import time
 import shutil
 import argparse
 import numpy as np
-from tqdm import tqdm
 from math import sqrt
 from multiprocessing import Pool
 from cfg.config import *
@@ -15,10 +14,10 @@ from cfg.config import *
 #
 # video_info[...][0] = ROI (Region-of-Interest): list of coordinate pairs
 # video_info[...][1] = MOI (Motion-of-Interest): list of (list of coordinate pairs)
-# video_info[...][2] = Object cv2.VideoWriter để ghi video output
+# video_info[...][2] = output_path
 # video_info[...][3] = Số lượng frame của video.
 # Bằng "-1" nếu chưa load content của video.
-# video_info[...][4] = Object cv2.VideoCapture
+# video_info[...][4] = video_path
 # video_info[...][5][i][j] = List chứa các (class_id, x, y) được đếm tại frame thứ i
 # đi theo moi thứ j. (x == y == -1) nếu input không hỗ trợ.
 #
@@ -67,40 +66,105 @@ def loadVideoContent(video_info, video_dir, output_dir, video_name):
     video_path = os.path.join(video_dir, video_name+'.mp4')
     output_path = os.path.join(output_dir, video_name+'.mp4')
     vid = cv2.VideoCapture(video_path)
-    codec = cv2.VideoWriter_fourcc(*'mp4v')
-    vid_fps = int(vid.get(cv2.CAP_PROP_FPS))
-    vid_width, vid_height = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
-        vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    out = cv2.VideoWriter(output_path, codec, vid_fps, (vid_width, vid_height))
-    frame_count = 0
-    # video_info[video_name][4] = np.ndarray(shape=(1200, vid_height, vid_width, 3), dtype=np.uint8)
-    while True:
-        _, img = vid.read()
-        if img is None:
-            break
-        # print(img.shape)
-        # print(video_info[video_name][4].shape)
-        # video_info[video_name][4][frame_count] = img
-        frame_count += 1
-
+    # codec = cv2.VideoWriter_fourcc(*'mp4v')
+    # vid_fps = int(vid.get(cv2.CAP_PROP_FPS))
+    # vid_width, vid_height = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
+    #     vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    # out = cv2.VideoWriter(output_path, codec, vid_fps, (vid_width, vid_height))
+    frame_count = int(vid.get(cv2.CAP_PROP_FRAME_COUNT))
+    # while True:
+    #     _, img = vid.read()
+    #     if img is None:
+    #         break
+    #     frame_count += 1
     vid.release()
-    video_info[video_name][2] = out
+
+    video_info[video_name][2] = output_path
     video_info[video_name][3] = frame_count
     # video_info[video_name][4] = np.array(video_info[video_name][4])
-    video_info[video_name][4] = cv2.VideoCapture(video_path)
+    video_info[video_name][4] = video_path
     moi_count = len(video_info[video_name][1])
     video_info[video_name][5] = [[[] for _ in range(moi_count)]
                                  for __ in range(frame_count)]
 
+def visualize_video(video):
+    frame_count = video[3]
+    if frame_count == -1:
+        return
 
-def calc_median(arr):
-    return np.median(arr, axis=0)
+    moi_count = len(video[1])
+    track_list = []
 
+    t = time.time()
 
-def findOptimalProcess(n):
-    a = [x for x in range(1, int(sqrt(n))) if n % x == 0]
-    return a[-1]
+    video_name = os.path.basename(os.path.normpath(video[4]))
+    video[4] = cv2.VideoCapture(video[4])
+    vid = video[4]
+    vid_fps = int(vid.get(cv2.CAP_PROP_FPS))
+    width, height = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
+        vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    codec = cv2.VideoWriter_fourcc(*'mp4v')
+    video[2] = cv2.VideoWriter(video[2], codec, vid_fps, (width, height))
 
+    curr_count = np.zeros(shape=(moi_count, 5), dtype=int)
+
+    segment_start = list(range(0, frame_count, FRAME_PER_SEGMENT))
+    segment_end = segment_start[1:].append(frame_count)
+    num_segment = len(segment_start)
+    flash_list = []
+    for i in range(num_segment):
+        print('Video: {}. Segment {:03d}/{:03d} ({:05.2f}%)'
+              .format(video_name, (i+1), num_segment, 100*(i+1)/num_segment))
+        img = np.ndarray(shape=(FRAME_PER_SEGMENT, height, width, 3),
+                            dtype=np.uint8)
+        for j in range(FRAME_PER_SEGMENT):
+            _, frame = vid.read()
+            img[j] = frame
+
+        for j in range(FRAME_PER_SEGMENT):
+            cv2.polylines(img[j], [video[0]], isClosed=True, color=ROI_COLOR_BGR, thickness=4)
+
+            for moi_id, moi in enumerate(video[1]):
+                if moi_id == 0:
+                    continue
+                cv2.polylines(img[j], [moi[:-1]], isClosed=False,
+                            color=getColorMOI_BGR(moi_id), thickness=2)
+                cv2.arrowedLine(img[j], tuple(moi[-2]), tuple(moi[-1]), 
+                                color=getColorMOI_BGR(moi_id), thickness=2, tipLength=0.01)
+                
+                
+            cv2.rectangle(img[j], (1125 - 150*((moi_count-2)//6), 0), (1280, 200), color=(222, 222, 222), thickness=-1)
+                
+            for moi_id in range(1, moi_count):
+                obj_list = video[5][i*FRAME_PER_SEGMENT + j][moi_id]
+                for obj in obj_list:
+                    curr_count[moi_id][obj[0]] += 1
+                    if obj[1][0] > -1:
+                        flash_list.append((i*FRAME_PER_SEGMENT+j, obj))
+
+                count_str = ' '.join([str(x) for x in curr_count[moi_id][1:]])
+                moi = video[1][moi_id]
+                cv2.putText(img[j], count_str, (1150 - 150 * ((moi_id-1)//6), 35 + ((moi_id-1)%6) * 25), cv2.FONT_HERSHEY_SIMPLEX,
+                            fontScale=0.6, color=getColorMOI_BGR(moi_id), thickness=2)
+
+            # Remove frames older than 0.25s
+            flash_list = [flash for flash in flash_list if (
+                i*FRAME_PER_SEGMENT+j-flash[0] < (vid_fps * 0.25))]
+            for flash in flash_list:
+                radius = (20 * flash[1][1][1] // height)
+                if radius <= 5: radius = 5
+                cv2.circle(img[j], flash[1][1], radius=radius,
+                            color=(0, 0, 255), thickness=-1)
+                cv2.putText(img[j], str(flash[1][0]), (flash[1][1][0]-radius, flash[1][1][1]-radius),
+                            cv2.FONT_HERSHEY_SIMPLEX, fontScale=flash[1][1][1] / height, color=(0, 255, 255), thickness=2)
+            frame_str = "frame_id: " + str(i*FRAME_PER_SEGMENT + j + 1)
+            cv2.putText(img[j], frame_str, (30, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=1, color=(0, 0, 255), thickness=2)
+
+        [video[2].write(frame) for frame in img]
+
+    print(time.time() - t)
+    video[2].release()
 
 def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
     t = time.time()
@@ -123,82 +187,17 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
         
         video_info[video_name][5][frame_id][moi_id].append((class_id, (x, y)))
 
-    for video_name in video_info:
-        video = video_info[video_name]
-        frame_count = video[3]
-        if frame_count == -1:
-            continue
-        print('frame count:', frame_count)
+    print('Loaded submission file and videos info. Time: {:.3f} seconds'.format(time.time() - t))
+    t = time.time()
 
-        moi_count = len(video[1])
-        track_list = []
-
-        print(time.time() - t)
-        t = time.time()
-
-        vid = video[4]
-        vid_fps = int(vid.get(cv2.CAP_PROP_FPS))
-        print('fps:', vid_fps)
-        width, height = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
-            vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        curr_count = np.zeros(shape=(moi_count, 5), dtype=int)
-
-        segment_start = list(range(0, frame_count, FRAME_PER_SEGMENT))
-        segment_end = segment_start[1:].append(frame_count)
-        num_segment = len(segment_start)
-        flash_list = []
-        for i in tqdm(range(num_segment)):
-            img = np.ndarray(shape=(FRAME_PER_SEGMENT, height, width, 3),
-                             dtype=np.uint8)
-            for j in range(FRAME_PER_SEGMENT):
-                _, frame = vid.read()
-                img[j] = frame
-
-            for j in range(FRAME_PER_SEGMENT):
-                cv2.polylines(img[j], [video[0]], isClosed=True, color=ROI_COLOR_BGR, thickness=4)
-
-                for moi_id, moi in enumerate(video[1]):
-                    if moi_id == 0:
-                        continue
-                    cv2.polylines(img[j], [moi[:-1]], isClosed=False,
-                                color=getColorMOI_BGR(moi_id), thickness=2)
-                    cv2.arrowedLine(img[j], tuple(moi[-2]), tuple(moi[-1]), 
-                                    color=getColorMOI_BGR(moi_id), thickness=2, tipLength=0.01)
-                    
-                    
-                cv2.rectangle(img[j], (1125 - 150*((moi_count-2)//6), 0), (1280, 200), color=(222, 222, 222), thickness=-1)
-                    
-                for moi_id in range(1, moi_count):
-                    obj_list = video[5][i*FRAME_PER_SEGMENT + j][moi_id]
-                    for obj in obj_list:
-                        curr_count[moi_id][obj[0]] += 1
-                        if obj[1][0] > -1:
-                            flash_list.append((i*FRAME_PER_SEGMENT+j, obj))
-
-                    count_str = ' '.join([str(x) for x in curr_count[moi_id][1:]])
-                    moi = video[1][moi_id]
-                    cv2.putText(img[j], count_str, (1150 - 150 * ((moi_id-1)//6), 35 + ((moi_id-1)%6) * 25), cv2.FONT_HERSHEY_SIMPLEX,
-                                fontScale=0.6, color=getColorMOI_BGR(moi_id), thickness=2)
-
-                # Remove frames older than 0.25s
-                flash_list = [flash for flash in flash_list if (
-                    i*FRAME_PER_SEGMENT+j-flash[0] < (vid_fps * 0.25))]
-                for flash in flash_list:
-                    radius = (20 * flash[1][1][1] // height)
-                    cv2.circle(img[j], flash[1][1], radius=radius,
-                               color=(0, 0, 255), thickness=-1)
-                    cv2.putText(img[j], str(flash[1][0]), (flash[1][1][0]-radius, flash[1][1][1]-radius),
-                                cv2.FONT_HERSHEY_SIMPLEX, fontScale=flash[1][1][1] / height, color=(0, 255, 255), thickness=2)
-                frame_str = "frame_id: " + str(i*FRAME_PER_SEGMENT + j + 1)
-                cv2.putText(img[j], frame_str, (30, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                            fontScale=1, color=(0, 0, 255), thickness=2)
-
-            [video[2].write(frame) for frame in img]
-
-        print(time.time() - t)
-        t = time.time()
-        video[2].release()
+    # for video_name in video_info:
+    #     video = video_info[video_name]
+    #     visualize_video(video)
+        
+    pool = Pool(25)
+    pool.map(visualize_video, video_info.values())
+    
+    print('Submission visualized successfully. Time: {} seconds.'.format(int(time.time() - t)))
 
 
 
