@@ -18,16 +18,16 @@ def getColorMOI_BGR(moi_id):
 
 # RGBA color
 MOI_COLOR = [(0, 0, 0, 0),
+             (204, 51, 153, 255),  # pink
              (75, 0, 130, 255),  # violet
-             (255, 20, 147, 255),  # pink
              (139, 69, 19, 255),  # brown
-             (112, 128, 144, 255),  # gray
+             (255, 153, 51, 255),  # orange
              (65, 105, 225, 255),  # light blue
+             (0, 206, 209, 255),  # cyan
              (50, 205, 50, 255),  # light green
              (128, 128, 0, 255),  # dark yellow
              (220, 20, 60, 255),  # red
              (255, 215, 0, 255),  # light yellow
-             (34, 139, 34, 255),  # dark green
-             (0, 206, 209, 255),  # cyan
+             (0, 100, 0, 255),  # dark green
              (25, 25, 112, 255),  # dark blue
              ]

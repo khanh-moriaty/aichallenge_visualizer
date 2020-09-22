@@ -18,7 +18,7 @@ from cfg.config import *
 # video_info[...][3] = Số lượng frame của video.
 # Bằng "-1" nếu chưa load content của video.
 # video_info[...][4] = video_path
-# video_info[...][5][i][j] = List chứa các (class_id, x, y) được đếm tại frame thứ i
+# video_info[...][5][i][j] = List chứa các (class_id, x, y, z) được đếm tại frame thứ i
 # đi theo moi thứ j. (x == y == -1) nếu input không hỗ trợ.
 #
 #########################################################################
@@ -124,13 +124,13 @@ def visualize_video(video):
         for j in range(FRAME_PER_SEGMENT):
             cv2.polylines(img[j], [video[0]], isClosed=True, color=ROI_COLOR_BGR, thickness=4)
 
-            for moi_id, moi in enumerate(video[1]):
-                if moi_id == 0:
-                    continue
-                cv2.polylines(img[j], [moi[:-1]], isClosed=False,
-                            color=getColorMOI_BGR(moi_id), thickness=2)
-                cv2.arrowedLine(img[j], tuple(moi[-2]), tuple(moi[-1]), 
-                                color=getColorMOI_BGR(moi_id), thickness=2, tipLength=0.01)
+            # for moi_id, moi in enumerate(video[1]):
+            #     if moi_id == 0:
+            #         continue
+            #     cv2.polylines(img[j], [moi[:-1]], isClosed=False,
+            #                 color=getColorMOI_BGR(moi_id), thickness=2)
+            #     cv2.arrowedLine(img[j], tuple(moi[-2]), tuple(moi[-1]), 
+            #                     color=getColorMOI_BGR(moi_id), thickness=2, tipLength=0.01)
                 
                 
             cv2.rectangle(img[j], (1125 - 150*((moi_count-2)//6), 0), (1280, 200), color=(222, 222, 222), thickness=-1)
@@ -140,7 +140,7 @@ def visualize_video(video):
                 for obj in obj_list:
                     curr_count[moi_id][obj[0]] += 1
                     if obj[1][0] > -1:
-                        flash_list.append((i*FRAME_PER_SEGMENT+j, obj))
+                        flash_list.append((i*FRAME_PER_SEGMENT+j, obj, moi_id))
 
                 count_str = ' '.join([str(x) for x in curr_count[moi_id][1:]])
                 moi = video[1][moi_id]
@@ -151,11 +151,11 @@ def visualize_video(video):
             flash_list = [flash for flash in flash_list if (
                 i*FRAME_PER_SEGMENT+j-flash[0] < (vid_fps * 0.25))]
             for flash in flash_list:
-                radius = (20 * flash[1][1][1] // height)
-                if radius <= 5: radius = 5
+                radius = (30 * flash[1][1][1] // height)
+                if radius <= 12: radius = 12
                 cv2.circle(img[j], flash[1][1], radius=radius,
-                            color=(0, 0, 255), thickness=-1)
-                cv2.putText(img[j], str(flash[1][0]), (flash[1][1][0]-radius, flash[1][1][1]-radius),
+                            color=getColorMOI_BGR(flash[2]), thickness=-1)
+                cv2.putText(img[j], str(flash[1][2]), (flash[1][1][0]-radius, flash[1][1][1]-radius),
                             cv2.FONT_HERSHEY_SIMPLEX, fontScale=flash[1][1][1] / height, color=(0, 255, 255), thickness=2)
             frame_str = "frame_id: " + str(i*FRAME_PER_SEGMENT + j + 1)
             cv2.putText(img[j], frame_str, (30, 30), cv2.FONT_HERSHEY_SIMPLEX,
@@ -180,12 +180,16 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
         frame_id = int(line_content[1]) - 1
         moi_id = int(line_content[2])
         class_id = int(line_content[3])
-        x = y = -1
+        x = y = z = -1
         if len(line_content) > 4:  # If testing data
             x = int(line_content[4])
             y = int(line_content[5])
+            z = int(line_content[6])
         
-        video_info[video_name][5][frame_id][moi_id].append((class_id, (x, y)))
+        if frame_id >= len(video_info[video_name][5]): 
+            continue
+        
+        video_info[video_name][5][frame_id][moi_id].append((class_id, (x, y), z))
 
     print('Loaded submission file and videos info. Time: {:.3f} seconds'.format(time.time() - t))
     t = time.time()
@@ -194,7 +198,7 @@ def visualize(sub_file_path, video_dir, info_dir, output_dir, testing=False):
     #     video = video_info[video_name]
     #     visualize_video(video)
         
-    pool = Pool(25)
+    pool = Pool(5)
     pool.map(visualize_video, video_info.values())
     
     print('Submission visualized successfully. Time: {} seconds.'.format(int(time.time() - t)))
