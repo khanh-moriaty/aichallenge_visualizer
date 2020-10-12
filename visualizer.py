@@ -8,6 +8,7 @@ import numpy as np
 from math import sqrt
 from multiprocessing import Pool
 from cfg.config import *
+from PIL import Image, ImageDraw
 
 ########################################################################
 # Chú thích về video_info:
@@ -107,11 +108,19 @@ def visualize_video(video):
     video[2] = cv2.VideoWriter(video[2], codec, vid_fps, (width, height))
 
     curr_count = np.zeros(shape=(moi_count, 5), dtype=int)
+    
+    img = Image.new('L', (width, height), 0)
+    ImageDraw.Draw(img).polygon([tuple(x) for x in video[0]], outline=1, fill=1)
+    roi_mask = np.array(img)
 
     segment_start = list(range(0, frame_count, FRAME_PER_SEGMENT))
     segment_end = segment_start[1:].append(frame_count)
     num_segment = len(segment_start)
     flash_list = []
+    
+    max_traffic = max([sum([len(y) for y in x]) for x in video[5]])
+    print('max traffic', video_name, max_traffic)
+    
     for i in range(num_segment):
         print('Video: {}. Segment {:03d}/{:03d} ({:05.2f}%)'
               .format(video_name, (i+1), num_segment, 100*(i+1)/num_segment))
@@ -122,18 +131,22 @@ def visualize_video(video):
             img[j] = frame
 
         for j in range(FRAME_PER_SEGMENT):
-            cv2.polylines(img[j], [video[0]], isClosed=True, color=ROI_COLOR_BGR, thickness=4)
+                            
+            # cv2.polylines(img[j], [video[0]], isClosed=True, color=ROI_COLOR_BGR, thickness=4)
+            ALPHA = 96
+            ROI_COLOR_BGR_MODIFIED = np.array(ROI_COLOR_BGR, dtype=np.float32)
+            ROI_COLOR_BGR_MODIFIED = np.clip(ROI_COLOR_BGR_MODIFIED * (1 + 0.5 * len(flash_list) / max_traffic), 0, 255)
+            img[j][np.where(roi_mask)] = (ROI_COLOR_BGR_MODIFIED * ALPHA / 255 + img[j][np.where(roi_mask)].astype(np.float32) * (1 - ALPHA / 255)).astype(np.uint8)
 
-            # for moi_id, moi in enumerate(video[1]):
-            #     if moi_id == 0:
-            #         continue
-            #     cv2.polylines(img[j], [moi[:-1]], isClosed=False,
-            #                 color=getColorMOI_BGR(moi_id), thickness=2)
-            #     cv2.arrowedLine(img[j], tuple(moi[-2]), tuple(moi[-1]), 
-            #                     color=getColorMOI_BGR(moi_id), thickness=2, tipLength=0.01)
+            for moi_id, moi in enumerate(video[1]):
+                if moi_id == 0:
+                    continue
+                cv2.polylines(img[j], [moi[:-1]], isClosed=False,
+                            color=getColorMOI_BGR(moi_id), thickness=2)
+                cv2.arrowedLine(img[j], tuple(moi[-2]), tuple(moi[-1]), 
+                                color=getColorMOI_BGR(moi_id), thickness=2, tipLength=0.03)
                 
-                
-            cv2.rectangle(img[j], (1125 - 150*((moi_count-2)//6), 0), (1280, 200), color=(222, 222, 222), thickness=-1)
+            cv2.rectangle(img[j], (1060 - 175*((moi_count-2)//6), 0), (1280, 200), color=(224, 224, 224), thickness=-1)
                 
             for moi_id in range(1, moi_count):
                 obj_list = video[5][i*FRAME_PER_SEGMENT + j][moi_id]
@@ -144,21 +157,22 @@ def visualize_video(video):
 
                 count_str = ' '.join([str(x) for x in curr_count[moi_id][1:]])
                 moi = video[1][moi_id]
-                cv2.putText(img[j], count_str, (1150 - 150 * ((moi_id-1)//6), 35 + ((moi_id-1)%6) * 25), cv2.FONT_HERSHEY_SIMPLEX,
+                cv2.putText(img[j], count_str, (1080 - 175 * ((moi_id-1)//6), 35 + ((moi_id-1)%6) * 25), cv2.FONT_HERSHEY_COMPLEX,
                             fontScale=0.6, color=getColorMOI_BGR(moi_id), thickness=2)
 
             # Remove frames older than 0.25s
             flash_list = [flash for flash in flash_list if (
                 i*FRAME_PER_SEGMENT+j-flash[0] < (vid_fps * 0.25))]
+
             for flash in flash_list:
                 radius = (30 * flash[1][1][1] // height)
                 if radius <= 12: radius = 12
                 cv2.circle(img[j], flash[1][1], radius=radius,
                             color=getColorMOI_BGR(flash[2]), thickness=-1)
-                cv2.putText(img[j], str(flash[1][2]), (flash[1][1][0]-radius, flash[1][1][1]-radius),
-                            cv2.FONT_HERSHEY_SIMPLEX, fontScale=flash[1][1][1] / height, color=(0, 255, 255), thickness=2)
+                cv2.putText(img[j], str(flash[1][0]), (flash[1][1][0]-radius, flash[1][1][1]-radius),
+                            cv2.FONT_HERSHEY_COMPLEX, fontScale=max(0.4, flash[1][1][1] / height), color=(0, 255, 255), thickness=2)
             frame_str = "frame_id: " + str(i*FRAME_PER_SEGMENT + j + 1)
-            cv2.putText(img[j], frame_str, (30, 30), cv2.FONT_HERSHEY_SIMPLEX,
+            cv2.putText(img[j], frame_str, (30, 30), cv2.FONT_HERSHEY_COMPLEX,
                         fontScale=1, color=(0, 0, 255), thickness=2)
 
         [video[2].write(frame) for frame in img]
